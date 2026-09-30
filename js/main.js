@@ -51,9 +51,10 @@ function provsHTML(f) {
 function jwLink(f) { return provOf(f)?.link || `https://www.justwatch.com/ca/recherche?q=${encodeURIComponent(f.t)}`; }
 const castLine = f => (f.cast || []).slice(0, 3).map(c => c.name).join(", ");
 const dirLine = f => (f.dirs || []).map(d => d.name).join(", ");
+const LIST_SHORT = { tspdt: "TSPDT", rt: "RT", imdb: "IMDb" };
 function refTags(f) {
   const out = [];
-  for (const c of catalogue.films) if (refCache[c.id]?.id === f.id) for (const [k, r] of Object.entries(c.l)) out.push(`${k === "tspdt" ? "TSPDT" : "RT"} #${r}`);
+  for (const c of catalogue.films) if (refCache[c.id]?.id === f.id) for (const [k, r] of Object.entries(c.l)) out.push(`${LIST_SHORT[k] || k} #${r}`);
   return out;
 }
 
@@ -381,9 +382,10 @@ export function parseCSV(text) {
 export function parseImport(text) {
   const rows = parseCSV(text.trim());
   const header = rows[0]?.map(h => h.trim().toLowerCase()) || [];
-  const ti = header.indexOf("title") >= 0 ? header.indexOf("title") : header.indexOf("name");
+  const col = (...names) => names.map(n => header.indexOf(n)).find(i => i >= 0) ?? -1;
+  const ti = col("title", "series_title", "name");
   if (ti >= 0 && rows.length > 1) {
-    const yi = header.indexOf("year"), ty = header.indexOf("title type");
+    const yi = col("year", "released_year"), ty = col("title type");
     return rows.slice(1).filter(r => !(ty >= 0 && r[ty] && !/movie|film|documentary/i.test(r[ty]))).map(r => ({ t: (r[ti] || "").trim(), y: parseInt(r[yi]) || null })).filter(x => x.t);
   }
   return text.split(/\n+/).map(l => l.replace(/^\s*\d+[.)]\s*/, "").trim()).filter(Boolean).map(line => {
@@ -555,6 +557,14 @@ async function loadReference() {
 }
 
 // Refresh availability of backlog films older than a week, a few at a time.
+// Films saved before titles switched to original language get their summary refreshed once.
+async function refreshTitles() {
+  const old = Object.values(state.films).filter(f => f.tv !== 2);
+  for (const f of old) {
+    try { putFilm((await fullFilm(f.id)).film); } catch { break; }
+  }
+}
+
 async function refreshProviders() {
   const WEEK = 7 * 864e5;
   const stale = backlog().filter(f => !f.prov || Date.now() - (f.prov.at || 0) > WEEK).slice(0, 30);
@@ -573,7 +583,7 @@ async function boot() {
     await loadReference();
     render();
     computeReco();
-    refreshProviders();
+    refreshTitles().then(refreshProviders);
   }
 }
 boot();

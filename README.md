@@ -4,7 +4,7 @@ Choisir le prochain film à regarder, à deux.
 
 - **Backlog** : n'importe quel film via TMDB, avec une origine (« Oscars 2025 », « Palme d'or »…), ou import d'une liste (CSV IMDb / Letterboxd, ou un titre par ligne).
 - **Au hasard** : tirage dans le backlog selon l'humeur, le genre, l'origine, la durée et vos plateformes.
-- **Selon le dernier film vu** : même lignée, tout le contraire, même réalisation, acteur principal, actrice principale. On cherche dans le backlog, dans les listes références (TSPDT, Rotten Tomatoes, listes importées) ou dans tout TMDB.
+- **Selon le dernier film vu** : même lignée, tout le contraire, même réalisation, acteur principal, actrice principale. On cherche dans le backlog, dans les listes références (TSPDT, Rotten Tomatoes, IMDb Top 1000, listes importées) ou dans tout TMDB.
 - **Disponibilité au Canada** : les plateformes de chaque film (données JustWatch via TMDB), et un filtre « seulement sur mes plateformes ».
 
 ## Utiliser
@@ -24,6 +24,6 @@ npm install && npm test   # test navigateur avec un TMDB simulé (Playwright)
 - `js/reco.js` : moteur de recommandation
 - `js/store.js` : stockage local, export / import
 - `js/main.js` : interface
-- `data/catalogue.json` : listes références (TSPDT top 200, Rotten Tomatoes 300)
+- `data/catalogue.json` : listes références (TSPDT top 200, Rotten Tomatoes 300, IMDb Top 1000)
 
 Ce produit utilise l'API TMDB mais n'est ni approuvé ni certifié par TMDB.

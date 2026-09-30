@@ -65,6 +65,19 @@ await step("imports a pasted list", async () => {
   await page.waitForFunction(() => document.querySelector("#impNote").textContent.includes("ajoutés"));
   assert.match(await page.textContent("#impNote"), /1 films ajoutés.*Introuvables : Film qui n'existe pas/);
 });
+await step("titles are original, or US English for non-Latin originals", async () => {
+  const titles = await page.$$eval("#blList .it", els => els.map(e => e.firstChild.textContent.trim()));
+  assert.ok(titles.includes("Seven Samurai"), titles.join());
+  assert.ok(!titles.some(t => /Samouraïs|七人/.test(t)));
+});
+await step("imports a Kaggle-style IMDb CSV as a reference list", async () => {
+  await page.fill("#impText", 'Poster_Link,Series_Title,Released_Year,Director\n"x",Chinatown,1974,Roman Polanski\n"y",Apollo 13,PG,Ron Howard');
+  await page.fill("#impName", "Kaggle");
+  await page.click('#impDest [data-v="ref"]');
+  await page.click("#impGo");
+  await page.waitForFunction(() => document.querySelector("#impNote").textContent.includes("2 films"));
+  await page.click('#impDest [data-v="backlog"]');
+});
 await step("availability filter keeps only films on my platforms", async () => {
   await page.check("#blAvail");
   const titles = await page.$$eval("#blList .it", els => els.map(e => e.firstChild.textContent.trim()));
@@ -107,6 +120,12 @@ await step("reference lists are matched to TMDB", async () => {
   const dir = await page.$eval("#recoGrid .sugg:nth-child(3) .ft", e => e.textContent);
   assert.match(dir, /Godfather Part II|Apocalypse|Conversation/);
 });
+await step("IMDb Top 1000 is a built-in list", async () => {
+  await page.click('#tabs [data-tab="listes"]');
+  await page.click('#listPick [data-l="imdb"]');
+  await page.waitForFunction(() => document.querySelector("#listNote").textContent.startsWith("1000 films"));
+  await page.waitForFunction(() => [...document.querySelectorAll("#lsList .it")].some(e => e.textContent.includes("The Godfather")), null, { timeout: 30000 });
+});
 await step("marking watched removes it from the backlog and future picks", async () => {
   await page.click('#tabs [data-tab="backlog"]');
   const before = await page.textContent("#cntBacklog");
@@ -117,6 +136,19 @@ await step("marking watched removes it from the backlog and future picks", async
 await step("data survives a reload", async () => {
   await page.reload();
   await page.waitForFunction(() => document.querySelector("#cntBacklog").textContent === "5");
+});
+await step("films saved with an old French title are refreshed", async () => {
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("movizz.v2"));
+    const f = Object.values(s.films).find(x => x.t === "Chinatown");
+    f.t = "Chinatown (titre français)"; delete f.tv;
+    localStorage.setItem("movizz.v2", JSON.stringify(s));
+  });
+  await page.reload();
+  await page.waitForFunction(() => {
+    const s = JSON.parse(localStorage.getItem("movizz.v2"));
+    return Object.values(s.films).some(x => x.t === "Chinatown" && x.tv === 2);
+  });
 });
 await step("phone width has no horizontal scroll", async () => {
   await page.setViewportSize({ width: 390, height: 900 });
