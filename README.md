@@ -13,16 +13,27 @@ L'app est un site statique, sans serveur ni compilation. Il faut une clé TMDB g
 
 Les données (backlog, vus, plateformes) sont gardées dans le navigateur. Exporter / Importer (onglet Réglages) permet de les déplacer ou de fusionner deux backlogs.
 
+## Foyer partagé (Supabase)
+
+Pour partager le backlog entre appareils et entre personnes, l'app se connecte à un projet Supabase (`js/config.js` : URL du projet et clé *publishable*, publiques par conception).
+
+1. Dans Supabase › SQL Editor, exécuter `supabase/schema.sql` (tables, règles d'accès par foyer, mises à jour en direct).
+2. Dans Authentication › URL Configuration, mettre l'adresse du site comme Site URL.
+3. Dans l'app, Réglages › Foyer partagé : se connecter par courriel, créer le foyer, puis donner le code d'invitation à l'autre personne.
+
+Chaque appareil garde une copie locale et envoie ses changements ; le plus récent l'emporte. La clé TMDB et les plateformes sont partagées dans le foyer.
+
 ## Développer
 
 ```sh
 npm start          # sert le site sur http://localhost:8080
-npm install && npm test   # test navigateur avec un TMDB simulé (Playwright)
+npm install && npm test   # test navigateur avec TMDB et Supabase simulés (Playwright)
 ```
 
 - `js/tmdb.js` : client TMDB
 - `js/reco.js` : moteur de recommandation
 - `js/store.js` : stockage local, export / import
+- `js/sync.js` : synchronisation du foyer avec Supabase
 - `js/main.js` : interface
 - `data/catalogue.json` : listes références (TSPDT top 200, Rotten Tomatoes 300, IMDb Top 1000)
 
