@@ -203,16 +203,15 @@ await step("phone width has no horizontal scroll", async () => {
 const desk = await newPage(), phone = await newPage({ width: 390, height: 900 });
 const count = (p, sel) => p.textContent(sel).then(t => t.trim());
 const focus = p => p.evaluate(() => dispatchEvent(new Event("focus")));
-async function signInAs(p, email) {
+const synced = p => p.waitForFunction(() => document.querySelector("#syncStatus")?.textContent.includes("Synchronisé"));
+async function joinFoyer(p, code, pass) {
   await p.click('#tabs [data-tab="reglages"]');
-  await p.waitForSelector("#syncEmail");
-  await p.fill("#syncEmail", email);
-  await p.click("#syncLogin button");
-  await p.waitForFunction(() => document.querySelector("#syncNote")?.textContent.includes("Lien envoyé"));
-  await p.evaluate(() => window.__mockSbClickLink());
-  await p.waitForSelector("#syncCreate");
+  await p.waitForSelector("#syncJoin");
+  await p.fill("#syncCode", code);
+  await p.fill("#syncPass", pass);
+  await p.click("#syncJoin button");
 }
-await step("creates a foyer and uploads the existing backlog and settings", async () => {
+await step("creates a foyer with a password and uploads the existing backlog and settings", async () => {
   await desk.goto(base);
   await desk.fill("#keyInput", "goodkey123");
   await desk.click("#keySave");
@@ -225,25 +224,31 @@ await step("creates a foyer and uploads the existing backlog and settings", asyn
     await desk.click("#addAc .ac-list button");
     await desk.waitForFunction(n => document.querySelectorAll("#blList .item").length === n, n);
   }
-  await signInAs(desk, "nicolas@example.com");
+  await desk.click('#tabs [data-tab="reglages"]');
+  await desk.waitForSelector("#syncCreate");
   await desk.fill("#syncName", "Chez nous");
+  await desk.fill("#syncNewPass", "cinema42");
   await desk.click("#syncCreate button");
-  await desk.waitForFunction(() => document.querySelector("#syncStatus")?.textContent.includes("Synchronisé"));
+  await synced(desk);
   assert.equal(await count(desk, "#syncCodeShow"), "AB12C1");
   assert.equal(db.households[0].name, "Chez nous");
   assert.equal(db.films.length, 2);
   assert.equal(db.households[0].settings.key, "goodkey123");
   assert.deepEqual(db.households[0].settings.subs, [8]);
 });
-await step("the other person joins with the code and gets everything, key included", async () => {
+await step("another device needs the right password, then gets the foyer's data in place of its own", async () => {
   await phone.goto(base);
-  assert.equal(await phone.isVisible("#needKey"), false); // lands on Réglages
-  await signInAs(phone, "copine@example.com");
-  await phone.fill("#syncCode", " ab12c1 ");
-  await phone.click("#syncJoin button");
+  await phone.evaluate(() => localStorage.setItem("movizz.v2", JSON.stringify({ films: { 3: { id: 3, t: "Goodfellas", status: "backlog", u: Date.now() } }, lists: {}, settings: { key: "", subs: [], rent: false } })));
+  await phone.reload();
+  assert.equal(await count(phone, "#cntBacklog"), "1");
+  await joinFoyer(phone, " ab12c1 ", "mauvais");
+  await phone.waitForFunction(() => document.querySelector("#syncNote")?.textContent.includes("Code ou mot de passe incorrect"));
+  await joinFoyer(phone, " ab12c1 ", "cinema42");
   await phone.waitForFunction(() => document.querySelector("#cntBacklog").textContent === "2");
   await phone.waitForFunction(() => document.querySelector("#keyInput").value === "goodkey123");
   await phone.waitForSelector('#subsChips [data-sub="8"][aria-pressed="true"]');
+  const ids = await phone.evaluate(() => Object.keys(JSON.parse(localStorage.getItem("movizz.v2")).films).sort());
+  assert.deepEqual(ids, ["10", "5"]);
 });
 await step("marking watched on one device shows up on the other", async () => {
   await phone.click('#tabs [data-tab="backlog"]');
@@ -265,18 +270,27 @@ await step("removing a film on one device removes it on the other", async () => 
 await step("the foyer survives a reload", async () => {
   await phone.reload();
   await phone.click('#tabs [data-tab="reglages"]');
-  await phone.waitForFunction(() => document.querySelector("#syncStatus")?.textContent.includes("Synchronisé"));
+  await synced(phone);
   assert.equal(await count(phone, "#cntVus"), "1");
   assert.equal(await count(phone, "#cntBacklog"), "");
   if (process.env.SHOTS) await phone.screenshot({ path: `${process.env.SHOTS}/foyer-phone.png`, fullPage: true });
 });
-await step("a wrong invite code says so", async () => {
+await step("a foyer created before passwords gets one from a connected device", async () => {
+  Object.assign(db.households[0], { password: undefined, has_password: false });
   const p = await newPage();
   await p.goto(base);
-  await signInAs(p, "voisin@example.com");
-  await p.fill("#syncCode", "ZZZZZZ");
-  await p.click("#syncJoin button");
-  await p.waitForFunction(() => document.querySelector("#syncNote")?.textContent.includes("aucun foyer"));
+  await joinFoyer(p, "AB12C1", "cinema42");
+  await p.waitForFunction(() => document.querySelector("#syncNote")?.textContent.includes("pas encore de mot de passe"));
+  await desk.reload();
+  await desk.click('#tabs [data-tab="reglages"]');
+  await desk.waitForSelector("#syncSetPass");
+  assert.match(await desk.textContent("#syncSetPass button"), /Définir/);
+  await desk.fill("#syncSetPassInput", "popcorn7");
+  await desk.click("#syncSetPass button");
+  await desk.waitForFunction(() => document.querySelector("#syncNote")?.textContent.includes("enregistré"));
+  await joinFoyer(p, "AB12C1", "popcorn7");
+  await synced(p);
+  assert.equal(await count(p, "#cntVus"), "1");
 });
 
 assert.deepEqual(errors, []);

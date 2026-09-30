@@ -17,9 +17,9 @@ Les données (backlog, vus, plateformes) sont gardées dans le navigateur. Expor
 
 Pour partager le backlog entre appareils et entre personnes, l'app se connecte à un projet Supabase (`js/config.js` : URL du projet et clé *publishable*, publiques par conception).
 
-1. Dans Supabase › SQL Editor, exécuter `supabase/schema.sql` (tables, règles d'accès par foyer, mises à jour en direct).
-2. Dans Authentication › URL Configuration, mettre l'adresse du site comme Site URL.
-3. Dans l'app, Réglages › Foyer partagé : se connecter par courriel, créer le foyer, puis donner le code d'invitation à l'autre personne.
+1. Dans Supabase › SQL Editor, exécuter `supabase/schema.sql` (tables, règles d'accès par foyer, mot de passe du foyer, mises à jour en direct). Le relancer après chaque mise à jour du fichier.
+2. Dans Authentication › Sign In / Providers, activer « Allow anonymous sign-ins » : chaque appareil reçoit sa propre session, et c'est le code du foyer plus son mot de passe qui donnent accès.
+3. Dans l'app, Réglages › Foyer partagé : créer le foyer (nom et mot de passe), puis, sur chaque autre appareil, « Rejoindre » avec le code et le mot de passe. Rejoindre remplace les données de l'appareil par celles du foyer.
 
 Chaque appareil garde une copie locale et envoie ses changements ; le plus récent l'emporte. La clé TMDB et les plateformes sont partagées dans le foyer.
 
