@@ -70,6 +70,20 @@ await step("titles are original, or US English for non-Latin originals", async (
   assert.ok(titles.includes("Seven Samurai"), titles.join());
   assert.ok(!titles.some(t => /Samouraïs|七人/.test(t)));
 });
+await step("posters match the title shown, overviews stay in French", async () => {
+  await page.fill("#impText", "The Godfather (1972)\nThe 400 Blows (1959)");
+  await page.click("#impGo");
+  await page.waitForFunction(() => document.querySelector("#impNote").textContent.includes("2 films ajoutés"));
+  const films = await page.evaluate(() => Object.values(JSON.parse(localStorage.getItem("movizz.v2")).films));
+  const gf = films.find(f => f.id === 1), blows = films.find(f => f.id === 11);
+  assert.equal(gf.t, "The Godfather");
+  assert.equal(gf.poster, "/p1.jpg");
+  assert.equal(gf.overview, "Résumé de Le Parrain.");
+  assert.equal(blows.t, "Les Quatre Cents Coups");
+  assert.equal(blows.poster, "/p11-fr.jpg");
+  for (const id of [1, 11]) for (let i = 0; i < 2; i++) await page.click(`#blList [data-act="remove"][data-id="${id}"]`);
+  await page.waitForFunction(() => document.querySelector("#cntBacklog").textContent === "6");
+});
 await step("imports a Kaggle-style IMDb CSV as a reference list", async () => {
   await page.fill("#impText", 'Poster_Link,Series_Title,Released_Year,Director\n"x",Chinatown,1974,Roman Polanski\n"y",Apollo 13,PG,Ron Howard');
   await page.fill("#impName", "Kaggle");
@@ -147,7 +161,7 @@ await step("films saved with an old French title are refreshed", async () => {
   await page.reload();
   await page.waitForFunction(() => {
     const s = JSON.parse(localStorage.getItem("movizz.v2"));
-    return Object.values(s.films).some(x => x.t === "Chinatown" && x.tv === 2);
+    return Object.values(s.films).some(x => x.t === "Chinatown" && x.tv === 3);
   });
 });
 await step("phone width has no horizontal scroll", async () => {

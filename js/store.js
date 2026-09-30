@@ -1,6 +1,6 @@
 // Local persistence. Everything lives in this browser; export/import moves it between devices.
 const KEY = "movizz.v2";
-const REF_KEY = "movizz.refs.v2"; // v2: titles in original language
+const REF_KEY = "movizz.refs.v3"; // v3: titles and posters in original language or US English
 const PROV_KEY = "movizz.prov.v1";
 
 const empty = () => ({
