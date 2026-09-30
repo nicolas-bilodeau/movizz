@@ -1,7 +1,9 @@
 // Thin TMDB v3 client. Accepts either a v3 API key or a v4 read access token.
 const BASE = "https://api.themoviedb.org/3";
 export const REGION = "CA";
-export const LANG = "fr-CA";
+// Titles come from en-US (for non-Latin originals); descriptive text and genre names in French.
+export const LANG = "en-US";
+export const TEXT_LANG = "fr-CA";
 
 export const img = (path, size = "w342") => (path ? `https://image.tmdb.org/t/p/${size}${path}` : null);
 
@@ -39,23 +41,36 @@ export class Tmdb {
   }
 
   check() { return this.get("/configuration", { language: undefined }); }
-  genres() { return this.get("/genre/movie/list"); }
+  genres() { return this.get("/genre/movie/list", { language: TEXT_LANG }); }
   providers() { return this.get("/watch/providers/movie", { watch_region: REGION }); }
   search(query, year) { return this.get("/search/movie", { query, year, include_adult: "false" }); }
-  details(id) { return this.get(`/movie/${id}`, { append_to_response: "credits,keywords,recommendations,similar,watch/providers" }); }
+  details(id) { return this.get(`/movie/${id}`, { language: TEXT_LANG, append_to_response: "credits,keywords,recommendations,similar,watch/providers,translations" }); }
   watchProviders(id) { return this.get(`/movie/${id}/watch/providers`, { language: undefined }); }
   personCredits(id) { return this.get(`/person/${id}/movie_credits`); }
   discover(params) { return this.get("/discover/movie", { include_adult: "false", ...params }); }
 }
 
 // Compact the parts of a details payload the app keeps per film.
+// Original title when it is written in Latin script, otherwise the US English title.
+const LATIN = /^[\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]+$/u;
+export function displayTitle(original, english) {
+  if (original && LATIN.test(original)) return original;
+  return english || original || "";
+}
+function englishTitle(d) {
+  const tr = d.translations?.translations || [];
+  const pickT = t => t?.data?.title;
+  return pickT(tr.find(t => t.iso_639_1 === "en" && t.iso_3166_1 === "US")) || pickT(tr.find(t => t.iso_639_1 === "en")) || "";
+}
+
 export function summarize(d) {
   const crew = d.credits?.crew || [];
   const cast = (d.credits?.cast || []).slice().sort((a, b) => a.order - b.order).slice(0, 10);
   return {
     id: d.id,
-    t: d.title,
+    t: displayTitle(d.original_title, englishTitle(d)) || d.title,
     ot: d.original_title,
+    tv: 2,
     y: d.release_date ? +d.release_date.slice(0, 4) : null,
     poster: d.poster_path || null,
     overview: d.overview || "",
@@ -89,7 +104,7 @@ export function providersFrom(wp) {
 export function fromResult(r) {
   return {
     id: r.id,
-    t: r.title,
+    t: displayTitle(r.original_title, r.title),
     ot: r.original_title,
     y: r.release_date ? +r.release_date.slice(0, 4) : null,
     poster: r.poster_path || null,
