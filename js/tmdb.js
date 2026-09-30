@@ -1,9 +1,11 @@
 // Thin TMDB v3 client. Accepts either a v3 API key or a v4 read access token.
 const BASE = "https://api.themoviedb.org/3";
 export const REGION = "CA";
-// Titles come from en-US (for non-Latin originals); descriptive text and genre names in French.
+// Titles and posters come from en-US (or the original language); descriptive text and genre names in French.
 export const LANG = "en-US";
 export const TEXT_LANG = "fr-CA";
+// Poster languages fetched alongside en-US, so a film in a Latin-script language keeps its original poster.
+const POSTER_LANGS = "en,null,fr,es,it,de,pt,nl,sv,da,no,fi,pl,cs,hu,ro,tr,ca";
 
 export const img = (path, size = "w342") => (path ? `https://image.tmdb.org/t/p/${size}${path}` : null);
 
@@ -44,7 +46,7 @@ export class Tmdb {
   genres() { return this.get("/genre/movie/list", { language: TEXT_LANG }); }
   providers() { return this.get("/watch/providers/movie", { watch_region: REGION }); }
   search(query, year) { return this.get("/search/movie", { query, year, include_adult: "false" }); }
-  details(id) { return this.get(`/movie/${id}`, { language: TEXT_LANG, append_to_response: "credits,keywords,recommendations,similar,watch/providers,translations" }); }
+  details(id) { return this.get(`/movie/${id}`, { append_to_response: "credits,keywords,recommendations,similar,watch/providers,translations,images", include_image_language: POSTER_LANGS }); }
   watchProviders(id) { return this.get(`/movie/${id}/watch/providers`, { language: undefined }); }
   personCredits(id) { return this.get(`/person/${id}/movie_credits`); }
   discover(params) { return this.get("/discover/movie", { include_adult: "false", ...params }); }
@@ -52,28 +54,42 @@ export class Tmdb {
 
 // Compact the parts of a details payload the app keeps per film.
 // Original title when it is written in Latin script, otherwise the US English title.
+// Bumped whenever the way titles or posters are picked changes, so saved films get refreshed once.
+export const TV = 3;
 const LATIN = /^[\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]+$/u;
 export function displayTitle(original, english) {
   if (original && LATIN.test(original)) return original;
   return english || original || "";
 }
-function englishTitle(d) {
+const translation = (d, lang, region, field) => {
   const tr = d.translations?.translations || [];
-  const pickT = t => t?.data?.title;
-  return pickT(tr.find(t => t.iso_639_1 === "en" && t.iso_3166_1 === "US")) || pickT(tr.find(t => t.iso_639_1 === "en")) || "";
+  const pick = t => t?.data?.[field];
+  return pick(tr.find(t => t.iso_639_1 === lang && t.iso_3166_1 === region)) || pick(tr.find(t => t.iso_639_1 === lang && t.data?.[field])) || "";
+};
+const englishTitle = d => translation(d, "en", "US", "title") || d.title;
+const frenchOverview = d => translation(d, "fr", "CA", "overview") || d.overview || "";
+// Original-language poster when the title shown is the original one, otherwise the US poster.
+function posterOf(d, t) {
+  const lang = d.original_language;
+  if (lang && lang !== "en" && t === d.original_title) {
+    const p = (d.images?.posters || []).filter(x => x.iso_639_1 === lang).sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0))[0];
+    if (p) return p.file_path;
+  }
+  return d.poster_path || null;
 }
 
 export function summarize(d) {
+  const t = displayTitle(d.original_title, englishTitle(d)) || d.title;
   const crew = d.credits?.crew || [];
   const cast = (d.credits?.cast || []).slice().sort((a, b) => a.order - b.order).slice(0, 10);
   return {
     id: d.id,
-    t: displayTitle(d.original_title, englishTitle(d)) || d.title,
+    t,
     ot: d.original_title,
-    tv: 2,
+    tv: TV,
     y: d.release_date ? +d.release_date.slice(0, 4) : null,
-    poster: d.poster_path || null,
-    overview: d.overview || "",
+    poster: posterOf(d, t),
+    overview: frenchOverview(d),
     runtime: d.runtime || null,
     vote: d.vote_average || 0,
     votes: d.vote_count || 0,

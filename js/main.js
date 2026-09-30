@@ -1,6 +1,6 @@
-import { Tmdb, TmdbError, img, summarize, providersFrom, fromResult } from "./tmdb.js";
-import { state, save, onChange, statusOf, backlog, watched, putFilm, patchFilm, removeFilm, refCache, saveRefCache, provCache, saveProvCache, exportJSON, importJSON } from "./store.js";
-import { buildCategories, mood } from "./reco.js";
+import { Tmdb, TmdbError, img, summarize, providersFrom, fromResult, TV } from "./tmdb.js?v=3";
+import { state, save, onChange, statusOf, backlog, watched, putFilm, patchFilm, removeFilm, refCache, saveRefCache, provCache, saveProvCache, exportJSON, importJSON } from "./store.js?v=3";
+import { buildCategories, mood } from "./reco.js?v=3";
 
 /* ---------- helpers ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -557,9 +557,9 @@ async function loadReference() {
 }
 
 // Refresh availability of backlog films older than a week, a few at a time.
-// Films saved before titles switched to original language get their summary refreshed once.
+// Films saved before the current title/poster rules get their summary refreshed once.
 async function refreshTitles() {
-  const old = Object.values(state.films).filter(f => f.tv !== 2);
+  const old = Object.values(state.films).filter(f => f.tv !== TV);
   for (const f of old) {
     try { putFilm((await fullFilm(f.id)).film); } catch { break; }
   }
