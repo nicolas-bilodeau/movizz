@@ -296,3 +296,10 @@ select.auto { width: auto; flex: 0 0 auto; }
 .progress { height: 4px; background: var(--surface-2); overflow: hidden; }
 .progress > div { height: 100%; background: var(--gold); transition: width .2s; }
 .mini-fill { width: 100%; height: 100%; }
+
+/* ---------- Shared foyer ---------- */
+input[type="email"] { background: var(--bg); border: 1px solid var(--line); border-bottom: 2px solid var(--gold); border-radius: 0; padding: 9px 11px; width: 100%; }
+#syncLogin input { width: auto; }
+.invite { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 12px 14px; border: 1px dashed var(--gold); background: var(--bg); }
+.invite .code { font-family: var(--display); font-size: 28px; letter-spacing: .28em; color: var(--accent); }
+.invite .note { flex-basis: 100%; }

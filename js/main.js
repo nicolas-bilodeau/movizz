@@ -1,6 +1,8 @@
-import { Tmdb, TmdbError, img, summarize, providersFrom, fromResult, TV } from "./tmdb.js?v=3";
-import { state, save, onChange, statusOf, backlog, watched, putFilm, patchFilm, removeFilm, refCache, saveRefCache, provCache, saveProvCache, exportJSON, importJSON } from "./store.js?v=3";
-import { buildCategories, mood } from "./reco.js?v=3";
+// Bump ?v= on every import (and in index.html) with each release: GitHub Pages lets browsers cache modules.
+import { Tmdb, TmdbError, img, summarize, providersFrom, fromResult, TV } from "./tmdb.js?v=5";
+import { state, save, onChange, statusOf, backlog, watched, putFilm, patchFilm, removeFilm, touchSettings, refCache, saveRefCache, provCache, saveProvCache, exportJSON, importJSON } from "./store.js?v=5";
+import { configured as syncConfigured, startSync, onSyncChange, syncState, signIn, signOut, createHousehold, joinHousehold, syncNow, frMessage } from "./sync.js?v=5";
+import { buildCategories, mood } from "./reco.js?v=5";
 
 /* ---------- helpers ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -402,7 +404,7 @@ $("#impGo").addEventListener("click", async () => {
   const name = $("#impName").value.trim() || "Liste importée";
   if (segValue("impDest") === "ref") {
     const id = "l-" + Date.now().toString(36);
-    state.lists[id] = { id, name, items };
+    state.lists[id] = { id, name, items, u: Date.now() };
     save();
     selRefs.add(id);
     note.textContent = `Liste « ${name} » créée (${items.length} films). Elle sera associée à TMDB à la première utilisation.`;
@@ -477,9 +479,9 @@ $("#subsChips").addEventListener("click", e => {
   const b = e.target.closest(".chip"); if (!b) return;
   const id = +b.dataset.sub, s = new Set(state.settings.subs);
   s.has(id) ? s.delete(id) : s.add(id);
-  state.settings.subs = [...s]; save();
+  state.settings.subs = [...s]; touchSettings();
 });
-$("#rentOk").addEventListener("change", e => { state.settings.rent = e.target.checked; save(); });
+$("#rentOk").addEventListener("change", e => { state.settings.rent = e.target.checked; touchSettings(); });
 $("#keySave").addEventListener("click", async () => {
   const key = $("#keyInput").value.trim();
   const note = $("#keyNote");
@@ -488,7 +490,7 @@ $("#keySave").addEventListener("click", async () => {
   const t = new Tmdb(key);
   try {
     await t.check();
-    tmdb = t; state.settings.key = key; save();
+    tmdb = t; state.settings.key = key; touchSettings();
     note.textContent = "Clé enregistrée. TMDB répond.";
     await loadReference();
     render();
@@ -507,6 +509,61 @@ $("#importFile").addEventListener("change", async e => {
   e.target.value = "";
 });
 
+/* ---------- shared foyer ---------- */
+let syncNote = "", syncShown = "";
+const hhmm = t => new Date(t).toLocaleTimeString("fr-CA", { hour: "2-digit", minute: "2-digit" });
+function renderSync() {
+  const panel = $("#syncPanel");
+  panel.hidden = !syncConfigured;
+  if (!syncConfigured) return;
+  const s = syncState(), body = $("#syncBody");
+  const note = syncNote || s.lastError;
+  const statusHTML = s.syncing ? `<span class="spin"></span> Synchronisation…` : s.lastError ? esc(s.lastError) : s.lastSync ? `Synchronisé à ${hhmm(s.lastSync)}.` : "";
+  // Rebuild only when the step changes, so typing in a field is never wiped by a background sync.
+  const shownKey = [s.phase, s.email, s.household?.name, s.household?.code, s.phase === "ready" ? "" : note].join("|");
+  if (shownKey === syncShown && body.childElementCount) { const st = $("#syncStatus"); if (st) st.innerHTML = statusHTML; return; }
+  syncShown = shownKey;
+  const noteHTML = note ? `<p class="note" id="syncNote">${esc(note)}</p>` : "";
+  if (s.phase === "loading") body.innerHTML = `<p class="note"><span class="spin"></span> Connexion au foyer…</p>`;
+  else if (s.phase === "signed-out") body.innerHTML = `
+    <p class="note">Connectez-vous pour partager le backlog, les films vus, les plateformes et la clé TMDB entre vos appareils et avec l'autre cinéphile de la maison. Vous recevrez un lien par courriel, sans mot de passe.</p>
+    <form class="row" id="syncLogin"><input type="email" id="syncEmail" class="grow" placeholder="Votre courriel" autocomplete="email" required><button class="btn primary">Recevoir le lien</button></form>${noteHTML}`;
+  else if (s.phase === "no-household") body.innerHTML = `
+    <p class="note">Connecté : <b>${esc(s.email)}</b>. Créez votre foyer, ou entrez le code reçu de l'autre personne.</p>
+    <div class="twocol">
+      <form class="stack" id="syncCreate"><label class="label" for="syncName">Nouveau foyer</label><input type="text" id="syncName" placeholder="Ex. Chez nous"><div><button class="btn primary">Créer notre foyer</button></div></form>
+      <form class="stack" id="syncJoin"><label class="label" for="syncCode">Rejoindre avec un code</label><input type="text" id="syncCode" placeholder="Ex. 4F9A2C" autocomplete="off"><div><button class="btn">Rejoindre</button></div></form>
+    </div>${noteHTML}
+    <div><button class="btn small ghost" data-act="sync-out">Se déconnecter</button></div>`;
+  else if (s.phase === "ready") body.innerHTML = `
+    <p class="note">Foyer <b>${esc(s.household?.name || "")}</b> · connecté : <b>${esc(s.email)}</b></p>
+    ${s.household?.code ? `<div class="invite"><span class="label">Code d'invitation</span><span class="code" id="syncCodeShow">${esc(s.household.code)}</span><span class="note">L'autre personne se connecte avec son courriel, puis choisit « Rejoindre avec un code ».</span></div>` : ""}
+    <p class="note" id="syncStatus">${statusHTML}</p>
+    <div class="row"><button class="btn" data-act="sync-now">Synchroniser maintenant</button><button class="btn small ghost" data-act="sync-out">Se déconnecter</button></div>`;
+}
+async function syncAction(fn, busyMsg) {
+  syncNote = busyMsg; renderSync();
+  try { await fn(); syncNote = ""; } catch (e) { syncNote = frMessage(e); }
+  renderSync();
+}
+$("#syncBody").addEventListener("submit", e => {
+  e.preventDefault();
+  const f = e.target;
+  if (f.id === "syncLogin") {
+    const email = $("#syncEmail").value.trim();
+    syncAction(async () => { await signIn(email); throw new Error(`Lien envoyé à ${email}. Ouvrez-le sur cet appareil pour vous connecter.`); }, "Envoi du lien…");
+  } else if (f.id === "syncCreate") { const name = $("#syncName").value.trim(); syncAction(() => createHousehold(name), "Création du foyer…"); }
+  else if (f.id === "syncJoin") { const code = $("#syncCode").value.trim(); syncAction(() => joinHousehold(code), "Recherche du foyer…"); }
+});
+onSyncChange(() => { if (tab === "reglages") renderSync(); });
+function onRemoteChange() {
+  // The foyer may bring the TMDB key to a device that had none.
+  if (state.settings.key && state.settings.key !== tmdb?.key) {
+    tmdb = new Tmdb(state.settings.key);
+    loadReference().then(() => { render(); refreshTitles(); });
+  }
+}
+
 /* ---------- global actions ---------- */
 document.addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
@@ -519,6 +576,8 @@ document.addEventListener("click", async e => {
   else if (act === "scope") { $$("#scopeSeg button").forEach(x => x.setAttribute("aria-pressed", x.dataset.v === b.dataset.v)); computeReco(); }
   else if (act === "seed-last") { setLast(state.films[id] || { id, t: $(".ticket .title")?.textContent || "" }, true); $("#lastInput").scrollIntoView({ behavior: "smooth", block: "center" }); }
   else if (act === "gotab") showTab(b.dataset.tab);
+  else if (act === "sync-now") syncNow();
+  else if (act === "sync-out") syncAction(signOut, "");
   else if (act === "more-bl") { blLimit += 60; renderBacklog(); }
   else if (act === "more-ls") { lsLimit += 60; renderLists(); }
   else if (act === "del-list") { if (b.dataset.confirm) { delete state.lists[b.dataset.id]; selRefs.delete(b.dataset.id); save(); } else { b.dataset.confirm = "1"; b.textContent = "Confirmer la suppression?"; } }
@@ -533,7 +592,7 @@ function render() {
   else if (tab === "backlog") renderBacklog();
   else if (tab === "listes") renderLists();
   else if (tab === "vus") renderVus();
-  else if (tab === "reglages") renderSettings();
+  else if (tab === "reglages") { renderSettings(); renderSync(); }
 }
 let renderQueued = false;
 onChange(() => {
@@ -561,7 +620,7 @@ async function loadReference() {
 async function refreshTitles() {
   const old = Object.values(state.films).filter(f => f.tv !== TV);
   for (const f of old) {
-    try { putFilm((await fullFilm(f.id)).film); } catch { break; }
+    try { putFilm((await fullFilm(f.id)).film, {}, false); } catch { break; }
   }
 }
 
@@ -569,7 +628,7 @@ async function refreshProviders() {
   const WEEK = 7 * 864e5;
   const stale = backlog().filter(f => !f.prov || Date.now() - (f.prov.at || 0) > WEEK).slice(0, 30);
   for (const f of stale) {
-    try { patchFilm(f.id, { prov: providersFrom(await tmdb.watchProviders(f.id)) }); } catch { break; }
+    try { patchFilm(f.id, { prov: providersFrom(await tmdb.watchProviders(f.id)) }, false); } catch { break; }
   }
 }
 
@@ -579,6 +638,7 @@ async function boot() {
   try { t = localStorage.getItem("movizz.tab") || "soir"; } catch {}
   if (!tmdb) t = "reglages";
   showTab(t);
+  startSync({ onRemoteChange });
   if (tmdb) {
     await loadReference();
     render();

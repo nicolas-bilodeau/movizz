@@ -9,7 +9,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%23100e0a'/><rect x='2.5' y='2.5' width='27' height='27' fill='none' stroke='%23c9a445'/><text x='16' y='23' font-size='19' text-anchor='middle' fill='%23e9cc7a' font-family='Didot,Georgia,serif'>M</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Limelight&family=Poiret+One&family=Josefin+Sans:wght@400;600;700&family=Jost:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="css/app.css?v=4">
+<link rel="stylesheet" href="css/app.css?v=5">
 </head>
 <body>
 <header class="marquee">
@@ -29,7 +29,7 @@
 <main>
   <div id="needKey" class="empty-state" hidden>
     <h3>Il faut une clé TMDB pour commencer</h3>
-    <p class="note">Movizz tire les films, les affiches, la distribution et la disponibilité au Canada de The Movie Database (TMDB). La clé est gratuite : créez un compte sur themoviedb.org, puis demandez une clé dans <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">Paramètres › API</a>. Collez ensuite le « jeton d'accès en lecture » (ou la clé API) dans l'onglet Réglages. Elle reste dans ce navigateur.</p>
+    <p class="note">Movizz tire les films, les affiches, la distribution et la disponibilité au Canada de The Movie Database (TMDB). La clé est gratuite : créez un compte sur themoviedb.org, puis demandez une clé dans <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">Paramètres › API</a>. Collez ensuite le « jeton d'accès en lecture » (ou la clé API) dans l'onglet Réglages. Si votre foyer est déjà créé sur un autre appareil, connectez-vous plutôt dans Réglages : la clé suivra.</p>
     <div class="row"><button class="btn primary" data-act="gotab" data-tab="reglages">Ajouter ma clé</button></div>
   </div>
 
@@ -157,9 +157,13 @@
     <div>
       <h2>Réglages</h2>
     </div>
+    <div class="panel" id="syncPanel" hidden>
+      <h3>Foyer partagé</h3>
+      <div class="stack" id="syncBody"></div>
+    </div>
     <div class="panel">
       <h3>Clé TMDB</h3>
-      <p class="note">Le « jeton d'accès en lecture » (long, commence par eyJ) ou la clé API v3. Elle est gardée dans ce navigateur seulement. <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">Obtenir une clé</a></p>
+      <p class="note">Le « jeton d'accès en lecture » (long, commence par eyJ) ou la clé API v3. Elle est gardée dans ce navigateur et, si vous avez un foyer partagé, dans votre foyer. <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">Obtenir une clé</a></p>
       <div class="row">
         <input type="password" id="keyInput" class="grow" autocomplete="off" placeholder="Collez votre clé ici">
         <button class="btn primary" id="keySave">Enregistrer</button>
@@ -175,7 +179,7 @@
     </div>
     <div class="panel">
       <h3>Sauvegarde et partage</h3>
-      <p class="note">Tout est enregistré dans ce navigateur. Pour retrouver votre backlog sur un autre appareil, ou le partager avec l'autre cinéphile de la maison, exportez un fichier puis importez-le de l'autre côté. Les deux backlogs sont fusionnés.</p>
+      <p class="note">Tout est aussi enregistré dans ce navigateur. Sans foyer partagé, vous pouvez déplacer votre backlog en exportant un fichier puis en l'important sur l'autre appareil. Les deux backlogs sont fusionnés.</p>
       <div class="row">
         <button class="btn" id="exportBtn">Exporter mes données</button>
         <label class="btn" for="importFile">Importer un fichier</label>
@@ -187,6 +191,6 @@
   </section>
 </main>
 <div class="toast" id="toast" hidden></div>
-<script type="module" src="js/main.js?v=3"></script>
+<script type="module" src="js/main.js?v=5"></script>
 </body>
 </html>

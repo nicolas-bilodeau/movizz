@@ -1,5 +1,5 @@
 // Recommendation engine: five angles from the last film watched, searched in one of three pools.
-import { fromResult } from "./tmdb.js?v=3";
+import { fromResult } from "./tmdb.js?v=5";
 
 export const LIGHT = new Set([35, 10751, 16, 10402, 10749, 12]);
 export const HEAVY = new Set([27, 10752, 53, 80]);

@@ -4,9 +4,9 @@ const REF_KEY = "movizz.refs.v3"; // v3: titles and posters in original language
 const PROV_KEY = "movizz.prov.v1";
 
 const empty = () => ({
-  films: {},      // tmdbId -> film summary + {status: "backlog"|"watched", addedAt, watchedAt, o}
+  films: {},      // tmdbId -> film summary + {status: "backlog"|"watched", addedAt, watchedAt, o, u}
   lists: {},      // imported lists: id -> {id, name, items: [{t, y}]}
-  settings: { key: "", subs: [], rent: false },
+  settings: { key: "", subs: [], rent: false, u: 0 },
 });
 
 function read(key, fallback) {
@@ -43,18 +43,24 @@ export const backlog = () => Object.values(state.films).filter(f => f.status ===
 export const watched = () =>
   Object.values(state.films).filter(f => f.status === "watched").sort((a, b) => (b.watchedAt || 0) - (a.watchedAt || 0));
 
-export function putFilm(summary, patch = {}) {
+// `u` stamps a change the user made, so it wins over older changes from another device.
+// Background refreshes (titles, availability) pass touch = false: every device redoes them on its own.
+export function putFilm(summary, patch = {}, touch = true) {
   const prev = state.films[summary.id] || {};
-  state.films[summary.id] = { ...prev, ...summary, ...patch };
+  state.films[summary.id] = { ...prev, ...summary, ...patch, ...(touch ? { u: Date.now() } : {}) };
   save();
 }
-export function patchFilm(id, patch) {
+export function patchFilm(id, patch, touch = true) {
   if (!state.films[id]) return;
-  state.films[id] = { ...state.films[id], ...patch };
+  state.films[id] = { ...state.films[id], ...patch, ...(touch ? { u: Date.now() } : {}) };
   save();
 }
 export function removeFilm(id) {
   delete state.films[id];
+  save();
+}
+export function touchSettings() {
+  state.settings.u = Date.now();
   save();
 }
 
@@ -77,10 +83,10 @@ export function importJSON(text) {
     const cur = state.films[id];
     // Keep the most recent status change on either side.
     const stamp = x => Math.max(x?.addedAt || 0, x?.watchedAt || 0);
-    if (!cur || stamp(f) > stamp(cur)) { state.films[id] = f; n++; }
+    if (!cur || stamp(f) > stamp(cur)) { state.films[id] = { ...f, u: Date.now() }; n++; }
   }
-  Object.assign(state.lists, data.lists || {});
-  if (Array.isArray(data.subs) && !state.settings.subs.length) state.settings.subs = data.subs;
+  for (const [id, l] of Object.entries(data.lists || {})) if (!state.lists[id]) state.lists[id] = { ...l, u: Date.now() };
+  if (Array.isArray(data.subs) && !state.settings.subs.length) { state.settings.subs = data.subs; state.settings.u = Date.now(); }
   save();
   return n;
 }

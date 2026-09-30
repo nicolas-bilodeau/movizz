@@ -6,6 +6,7 @@ import { extname, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { handle } from "./mock-tmdb.mjs";
+import { handle as handleDb, db } from "./mock-supabase.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json" };
@@ -19,13 +20,20 @@ const server = createServer(async (req, res) => {
 const base = `http://127.0.0.1:${server.address().port}/`;
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAEElEQVR4nGM45MgDRAwoFABHCgZb7i+grwAAAABJRU5ErkJggg==", "base64");
 
+const SB_CLIENT = await readFile(join(root, "tests/mock-supabase-client.js"));
 const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
-const page = await browser.newPage({ viewport: { width: 1100, height: 1400 } });
 const errors = [];
-page.on("pageerror", e => errors.push(e.message));
-await page.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
-await page.route(/image\.tmdb\.org/, r => r.fulfill({ status: 200, contentType: "image/png", body: PNG }));
-await page.route(/api\.themoviedb\.org/, r => { const [status, body] = handle(r.request().url()); r.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) }); });
+async function newPage(viewport = { width: 1100, height: 1400 }) {
+  const p = await (await browser.newContext({ viewport })).newPage();
+  p.on("pageerror", e => errors.push(e.message));
+  await p.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p.route(/image\.tmdb\.org/, r => r.fulfill({ status: 200, contentType: "image/png", body: PNG }));
+  await p.route(/api\.themoviedb\.org/, r => { const [status, body] = handle(r.request().url()); r.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) }); });
+  await p.route(/cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js/, r => r.fulfill({ status: 200, contentType: "text/javascript", body: SB_CLIENT }));
+  await p.route("https://mock.supabase.co/__db", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(handleDb(JSON.parse(r.request().postData()))) }));
+  return p;
+}
+const page = await newPage();
 
 const step = async (name, fn) => { await fn(); console.log("✓", name); };
 const shot = name => process.env.SHOTS && page.screenshot({ path: `${process.env.SHOTS}/${name}.png`, fullPage: true });
@@ -169,6 +177,86 @@ await step("phone width has no horizontal scroll", async () => {
   await page.click('#tabs [data-tab="soir"]');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await shot("mobile");
+});
+
+/* ---------- shared foyer: two devices, two people ---------- */
+const desk = await newPage(), phone = await newPage({ width: 390, height: 900 });
+const count = (p, sel) => p.textContent(sel).then(t => t.trim());
+const focus = p => p.evaluate(() => dispatchEvent(new Event("focus")));
+async function signInAs(p, email) {
+  await p.click('#tabs [data-tab="reglages"]');
+  await p.waitForSelector("#syncEmail");
+  await p.fill("#syncEmail", email);
+  await p.click("#syncLogin button");
+  await p.waitForFunction(() => document.querySelector("#syncNote")?.textContent.includes("Lien envoyé"));
+  await p.evaluate(() => window.__mockSbClickLink());
+  await p.waitForSelector("#syncCreate");
+}
+await step("creates a foyer and uploads the existing backlog and settings", async () => {
+  await desk.goto(base);
+  await desk.fill("#keyInput", "goodkey123");
+  await desk.click("#keySave");
+  await desk.waitForSelector('#subsChips [data-sub="8"]');
+  await desk.click('#subsChips [data-sub="8"]');
+  await desk.click('#tabs [data-tab="backlog"]');
+  for (const [q, n] of [["Paddington", 1], ["Chinatown", 2]]) {
+    await desk.fill("#addInput", q);
+    await desk.waitForSelector("#addAc .ac-list button");
+    await desk.click("#addAc .ac-list button");
+    await desk.waitForFunction(n => document.querySelectorAll("#blList .item").length === n, n);
+  }
+  await signInAs(desk, "nicolas@example.com");
+  await desk.fill("#syncName", "Chez nous");
+  await desk.click("#syncCreate button");
+  await desk.waitForFunction(() => document.querySelector("#syncStatus")?.textContent.includes("Synchronisé"));
+  assert.equal(await count(desk, "#syncCodeShow"), "AB12C1");
+  assert.equal(db.households[0].name, "Chez nous");
+  assert.equal(db.films.length, 2);
+  assert.equal(db.households[0].settings.key, "goodkey123");
+  assert.deepEqual(db.households[0].settings.subs, [8]);
+});
+await step("the other person joins with the code and gets everything, key included", async () => {
+  await phone.goto(base);
+  assert.equal(await phone.isVisible("#needKey"), false); // lands on Réglages
+  await signInAs(phone, "copine@example.com");
+  await phone.fill("#syncCode", " ab12c1 ");
+  await phone.click("#syncJoin button");
+  await phone.waitForFunction(() => document.querySelector("#cntBacklog").textContent === "2");
+  await phone.waitForFunction(() => document.querySelector("#keyInput").value === "goodkey123");
+  await phone.waitForSelector('#subsChips [data-sub="8"][aria-pressed="true"]');
+});
+await step("marking watched on one device shows up on the other", async () => {
+  await phone.click('#tabs [data-tab="backlog"]');
+  await phone.click('#blList [data-act="watch"][data-id="5"]');
+  await phone.waitForFunction(() => document.querySelector("#cntVus").textContent === "1");
+  await phone.waitForTimeout(1600);
+  await focus(desk);
+  await desk.waitForFunction(() => document.querySelector("#cntVus").textContent === "1" && document.querySelector("#cntBacklog").textContent === "1");
+});
+await step("removing a film on one device removes it on the other", async () => {
+  await desk.click('#tabs [data-tab="backlog"]');
+  for (let i = 0; i < 2; i++) await desk.click('#blList [data-act="remove"][data-id="10"]');
+  await desk.waitForFunction(() => document.querySelector("#cntBacklog").textContent === "");
+  await desk.waitForTimeout(1600);
+  await focus(phone);
+  await phone.waitForFunction(() => document.querySelector("#cntBacklog").textContent === "");
+  assert.deepEqual(db.films.find(f => f.id === 10).data, { deleted: true });
+});
+await step("the foyer survives a reload", async () => {
+  await phone.reload();
+  await phone.click('#tabs [data-tab="reglages"]');
+  await phone.waitForFunction(() => document.querySelector("#syncStatus")?.textContent.includes("Synchronisé"));
+  assert.equal(await count(phone, "#cntVus"), "1");
+  assert.equal(await count(phone, "#cntBacklog"), "");
+  if (process.env.SHOTS) await phone.screenshot({ path: `${process.env.SHOTS}/foyer-phone.png`, fullPage: true });
+});
+await step("a wrong invite code says so", async () => {
+  const p = await newPage();
+  await p.goto(base);
+  await signInAs(p, "voisin@example.com");
+  await p.fill("#syncCode", "ZZZZZZ");
+  await p.click("#syncJoin button");
+  await p.waitForFunction(() => document.querySelector("#syncNote")?.textContent.includes("aucun foyer"));
 });
 
 assert.deepEqual(errors, []);
