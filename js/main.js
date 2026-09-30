@@ -26,7 +26,7 @@ function posterHTML(f, cls = "poster") {
   const url = img(f.poster, cls === "poster" ? "w342" : "w154");
   if (url) return `<div class="${cls} has-img"><img src="${url}" alt="" loading="lazy"></div>`;
   const h = [...String(f.t)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 0) % 360;
-  const bg = `linear-gradient(160deg, hsl(${h} 45% 38%), hsl(${(h + 30) % 360} 50% 24%))`;
+  const bg = `linear-gradient(160deg, hsl(${h} 32% 24%), #100e0a)`;
   if (cls !== "poster") return `<div class="${cls}" style="background:${bg}"></div>`;
   return `<div class="poster" style="background:${bg}"><div class="pt">${esc(f.t)}</div><div class="py">${esc(f.y || "")}</div></div>`;
 }
