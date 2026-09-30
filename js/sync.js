@@ -15,7 +15,7 @@ let meta = (() => { try { return JSON.parse(localStorage.getItem(META_KEY)) || f
 const writeMeta = () => { try { localStorage.setItem(META_KEY, JSON.stringify(meta)); } catch {} };
 
 let sb = null, user = null, household = null, channel = null;
-let phase = configured ? "loading" : "off"; // off | loading | signed-out | no-household | ready
+let phase = configured ? "loading" : "off"; // off | loading | out | ready
 let lastSync = 0, lastError = "", syncing = false, again = false, applying = false;
 let onRemote = () => {};
 const listeners = new Set();
@@ -25,9 +25,10 @@ export const syncState = () => ({ configured, phase, email: user?.email || "", h
 
 export function frMessage(e) {
   const m = String(e?.message || e || "");
-  if (/rate limit/i.test(m)) return "Trop de courriels envoyés. Réessayez dans une heure.";
-  if (/Code inconnu/i.test(m)) return "Ce code ne correspond à aucun foyer.";
-  if (/invalid.*email|email.*invalid/i.test(m)) return "Cette adresse courriel n'est pas valide.";
+  if (/Code ou mot de passe incorrect/i.test(m)) return "Code ou mot de passe incorrect.";
+  if (/Pas de mot de passe/i.test(m)) return "Ce foyer n'a pas encore de mot de passe. Définissez-le dans Réglages, sur un appareil déjà connecté au foyer.";
+  if (/trop court/i.test(m)) return "Le mot de passe doit avoir au moins 6 caractères.";
+  if (/anonymous sign-ins are disabled/i.test(m)) return "Supabase refuse les nouveaux appareils : activez « Allow anonymous sign-ins » (Authentication › Sign In / Providers).";
   if (/fetch|network|Failed to/i.test(m)) return "Supabase est injoignable pour l'instant.";
   return m || "Erreur inconnue.";
 }
@@ -43,7 +44,7 @@ export async function startSync({ onRemoteChange } = {}) {
     const { data } = await sb.auth.getSession();
     await setUser(data.session?.user || null);
   } catch (e) {
-    lastError = frMessage(e); phase = "signed-out"; emit();
+    lastError = frMessage(e); phase = "out"; emit();
   }
   onChange(() => { if (!applying && phase === "ready") schedule(); });
   addEventListener("focus", () => schedule(0));
@@ -51,18 +52,20 @@ export async function startSync({ onRemoteChange } = {}) {
   setInterval(() => { if (!document.hidden) schedule(0); }, 60_000);
 }
 
-let settingUser;
+let settingUser, acting = false;
 async function setUser(u) {
-  if ((u && u.id === settingUser) || (u?.id === user?.id && phase !== "loading" && phase !== "signed-out")) return;
+  if (acting) return; // create/join handle the new session themselves
+  if ((u && u.id === settingUser) || (u?.id === user?.id && phase !== "loading" && phase !== "out")) return;
   settingUser = u?.id;
   user = u;
-  if (!u) { household = null; phase = "signed-out"; unsubscribe(); emit(); return; }
+  if (!u) { household = null; phase = "out"; unsubscribe(); emit(); settingUser = undefined; return; }
   try {
-    const { data, error } = await sb.from("members").select("household_id").eq("user_id", u.id).limit(1);
+    // One foyer per device; an older account may still have several, so take the first one joined.
+    const { data, error } = await sb.from("members").select("household_id,joined_at").eq("user_id", u.id).order("joined_at").limit(1);
     if (error) throw error;
     if (data.length) await enter(data[0].household_id);
-    else { household = null; phase = "no-household"; emit(); }
-  } catch (e) { lastError = frMessage(e); phase = "no-household"; emit(); }
+    else { household = null; phase = "out"; emit(); }
+  } catch (e) { lastError = frMessage(e); phase = "out"; emit(); }
   settingUser = undefined;
 }
 
@@ -75,25 +78,48 @@ async function enter(hid) {
   await syncNow();
 }
 
-/* ---------- account actions (throw on error; the caller shows the message) ---------- */
-export async function signIn(email) {
-  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname } });
+/* ---------- foyer actions (throw on error; the caller shows the message) ---------- */
+// Each device gets its own anonymous session; the foyer code + password is what grants access.
+async function ensureSession() {
+  const { data } = await sb.auth.getSession();
+  if (data.session?.user) { user = data.session.user; return; }
+  const { data: d, error } = await sb.auth.signInAnonymously();
   if (error) throw error;
+  user = d.user || d.session?.user;
 }
-export async function signOut() {
+async function acting_(fn) { acting = true; try { return await fn(); } finally { acting = false; } }
+export function createHousehold(name, password) {
+  return acting_(async () => {
+    if ((password || "").length < 6) throw new Error("Mot de passe trop court");
+    await ensureSession();
+    const { data, error } = await sb.rpc("create_household", { p_name: name || null, p_password: password });
+    if (error) throw error;
+    await enter(data);
+  });
+}
+// Joining replaces this device's data with the foyer's: the foyer is the reference copy.
+export function joinHousehold(code, password) {
+  return acting_(async () => {
+    await ensureSession();
+    const { data, error } = await sb.rpc("join_household", { p_code: code, p_password: password });
+    if (error) throw error;
+    state.films = {}; state.lists = {};
+    state.settings = { ...state.settings, u: 0 };
+    meta = freshMeta(null);
+    applying = true; save(); applying = false;
+    await enter(data);
+  });
+}
+export async function setHouseholdPassword(password) {
+  if ((password || "").length < 6) throw new Error("Mot de passe trop court");
+  const { error } = await sb.rpc("set_household_password", { p_password: password });
+  if (error) throw error;
+  await syncNow();
+}
+export async function leaveDevice() {
   unsubscribe();
   await sb.auth.signOut();
-  user = null; household = null; phase = "signed-out"; emit();
-}
-export async function createHousehold(name) {
-  const { data, error } = await sb.rpc("create_household", { p_name: name || null });
-  if (error) throw error;
-  await enter((Array.isArray(data) ? data[0] : data).id);
-}
-export async function joinHousehold(code) {
-  const { data, error } = await sb.rpc("join_household", { p_code: code });
-  if (error) throw error;
-  await enter((Array.isArray(data) ? data[0] : data).id);
+  user = null; household = null; phase = "out"; meta = freshMeta(null); writeMeta(); emit();
 }
 
 /* ---------- sync ---------- */
@@ -133,9 +159,9 @@ async function fetchSince(table, since) {
 }
 
 async function pull() {
-  const { data: hs, error } = await sb.from("households").select("*").eq("id", household.id).limit(1);
+  const { data: hs, error } = await sb.from("households").select("id,name,code,settings,settings_u,has_password").eq("id", household.id).limit(1);
   if (error) throw error;
-  if (!hs.length) { household = null; phase = "no-household"; meta = freshMeta(null); return; }
+  if (!hs.length) { household = null; phase = "out"; meta = freshMeta(null); return; }
   household = hs[0];
   const [films, lists] = await Promise.all([fetchSince("films", meta.filmsAt), fetchSince("lists", meta.listsAt)]);
   applying = true;
@@ -210,7 +236,6 @@ function subscribe() {
   channel = sb.channel(`foyer-${household.id}`)
     .on("postgres_changes", { event: "*", table: "films", ...f }, () => schedule(300))
     .on("postgres_changes", { event: "*", table: "lists", ...f }, () => schedule(300))
-    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "households", filter: `id=eq.${household.id}` }, () => schedule(300))
     .subscribe();
 }
 function unsubscribe() {

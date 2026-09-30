@@ -8,16 +8,29 @@ const project = (row, cols) => (cols === "*" ? { ...row } : Object.fromEntries(c
 export function handle(q) {
   if (q.op === "rpc") {
     if (!q.uid) return { data: null, error: { message: "Connexion requise" } };
-    let h;
+    const fail = message => ({ data: null, error: { message } });
+    const join = h => {
+      db.members = db.members.filter(m => m.user_id !== q.uid || m.household_id === h.id);
+      if (!db.members.some(m => m.household_id === h.id && m.user_id === q.uid)) db.members.push({ household_id: h.id, user_id: q.uid, joined_at: now() });
+      return { data: h.id, error: null };
+    };
     if (q.name === "create_household") {
-      h = { id: "h" + (db.households.length + 1), name: q.args.p_name || "Notre foyer", code: "AB12C" + (db.households.length + 1), settings: {}, settings_u: 0 };
+      if ((q.args.p_password || "").length < 6) return fail("Mot de passe trop court");
+      const h = { id: "h" + (db.households.length + 1), name: q.args.p_name || "Notre foyer", code: "AB12C" + (db.households.length + 1), settings: {}, settings_u: 0, password: q.args.p_password, has_password: true };
       db.households.push(h);
-    } else {
-      h = db.households.find(x => x.code === String(q.args.p_code).trim().toUpperCase());
-      if (!h) return { data: null, error: { message: "Code inconnu" } };
+      return join(h);
     }
-    if (!db.members.some(m => m.household_id === h.id && m.user_id === q.uid)) db.members.push({ household_id: h.id, user_id: q.uid });
-    return { data: h, error: null };
+    if (q.name === "join_household") {
+      const h = db.households.find(x => x.code === String(q.args.p_code).trim().toUpperCase());
+      if (h && !h.password) return fail("Pas de mot de passe");
+      if (!h || h.password !== q.args.p_password) return fail("Code ou mot de passe incorrect");
+      return join(h);
+    }
+    if (q.name === "set_household_password") {
+      if ((q.args.p_password || "").length < 6) return fail("Mot de passe trop court");
+      for (const m of db.members.filter(m => m.user_id === q.uid)) Object.assign(db.households.find(h => h.id === m.household_id), { password: q.args.p_password, has_password: true });
+      return { data: null, error: null };
+    }
   }
   const table = db[q.table];
   if (q.op === "upsert") {

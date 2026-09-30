@@ -38,6 +38,12 @@ export function createClient() {
         localStorage.setItem(PENDING, JSON.stringify(email));
         return { error: null };
       },
+      async signInAnonymously() {
+        const s = { user: { id: "anon-" + Math.random().toString(36).slice(2), is_anonymous: true } };
+        localStorage.setItem(SESSION, JSON.stringify(s));
+        listeners.forEach(cb => cb("SIGNED_IN", s));
+        return { data: { user: s.user, session: s }, error: null };
+      },
       async signOut() { localStorage.removeItem(SESSION); listeners.forEach(cb => cb("SIGNED_OUT", null)); return { error: null }; },
     },
     from: builder,

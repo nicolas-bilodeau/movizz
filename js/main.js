@@ -1,7 +1,7 @@
 // Bump ?v= on every import (and in index.html) with each release: GitHub Pages lets browsers cache modules.
 import { Tmdb, TmdbError, img, summarize, providersFrom, fromResult, TV } from "./tmdb.js?v=5";
 import { state, save, onChange, statusOf, backlog, watched, putFilm, patchFilm, removeFilm, touchSettings, refCache, saveRefCache, provCache, saveProvCache, exportJSON, importJSON } from "./store.js?v=5";
-import { configured as syncConfigured, startSync, onSyncChange, syncState, signIn, signOut, createHousehold, joinHousehold, syncNow, frMessage } from "./sync.js?v=5";
+import { configured as syncConfigured, startSync, onSyncChange, syncState, createHousehold, joinHousehold, setHouseholdPassword, leaveDevice, syncNow, frMessage } from "./sync.js?v=7";
 import { buildCategories, mood } from "./reco.js?v=5";
 
 /* ---------- helpers ---------- */
@@ -546,26 +546,35 @@ function renderSync() {
   const note = syncNote || s.lastError;
   const statusHTML = s.syncing ? `<span class="spin"></span> Synchronisation…` : s.lastError ? esc(s.lastError) : s.lastSync ? `Synchronisé à ${hhmm(s.lastSync)}.` : "";
   // Rebuild only when the step changes, so typing in a field is never wiped by a background sync.
-  const shownKey = [s.phase, s.email, s.household?.name, s.household?.code, s.phase === "ready" ? "" : note].join("|");
+  const shownKey = [s.phase, s.email, s.household?.name, s.household?.code, s.household?.has_password, syncNote || (s.phase === "ready" ? "" : note)].join("|");
   if (shownKey === syncShown && body.childElementCount) { const st = $("#syncStatus"); if (st) st.innerHTML = statusHTML; return; }
   syncShown = shownKey;
   const noteHTML = note ? `<p class="note" id="syncNote">${esc(note)}</p>` : "";
   if (s.phase === "loading") body.innerHTML = `<p class="note"><span class="spin"></span> Connexion au foyer…</p>`;
-  else if (s.phase === "signed-out") body.innerHTML = `
-    <p class="note">Connectez-vous pour partager le backlog, les films vus, les plateformes et la clé TMDB entre vos appareils et avec l'autre cinéphile de la maison. Vous recevrez un lien par courriel, sans mot de passe.</p>
-    <form class="row" id="syncLogin"><input type="email" id="syncEmail" class="grow" placeholder="Votre courriel" autocomplete="email" required><button class="btn primary">Recevoir le lien</button></form>${noteHTML}`;
-  else if (s.phase === "no-household") body.innerHTML = `
-    <p class="note">Connecté : <b>${esc(s.email)}</b>. Créez votre foyer, ou entrez le code reçu de l'autre personne.</p>
+  else if (s.phase === "out") body.innerHTML = `
+    <p class="note">Un foyer partage le backlog, les films vus, les plateformes et la clé TMDB entre vos appareils et avec l'autre cinéphile de la maison. Sur chaque appareil, on entre une seule fois le code du foyer et son mot de passe.</p>
     <div class="twocol">
-      <form class="stack" id="syncCreate"><label class="label" for="syncName">Nouveau foyer</label><input type="text" id="syncName" placeholder="Ex. Chez nous"><div><button class="btn primary">Créer notre foyer</button></div></form>
-      <form class="stack" id="syncJoin"><label class="label" for="syncCode">Rejoindre avec un code</label><input type="text" id="syncCode" placeholder="Ex. 4F9A2C" autocomplete="off"><div><button class="btn">Rejoindre</button></div></form>
-    </div>${noteHTML}
-    <div><button class="btn small ghost" data-act="sync-out">Se déconnecter</button></div>`;
+      <form class="stack" id="syncJoin">
+        <span class="label">Rejoindre notre foyer</span>
+        <input type="text" id="syncCode" placeholder="Code du foyer" autocomplete="username" autocapitalize="characters" spellcheck="false" required>
+        <input type="password" id="syncPass" placeholder="Mot de passe" autocomplete="current-password" required>
+        <div><button class="btn primary">Rejoindre</button></div>
+        <span class="note">Les données de cet appareil sont remplacées par celles du foyer.</span>
+      </form>
+      <form class="stack" id="syncCreate">
+        <span class="label">Ou créer un nouveau foyer</span>
+        <input type="text" id="syncName" placeholder="Nom (ex. Chez nous)">
+        <input type="password" id="syncNewPass" placeholder="Mot de passe (6 caractères ou plus)" autocomplete="new-password" minlength="6" required>
+        <div><button class="btn">Créer</button></div>
+      </form>
+    </div>${noteHTML}`;
   else if (s.phase === "ready") body.innerHTML = `
-    <p class="note">Foyer <b>${esc(s.household?.name || "")}</b> · connecté : <b>${esc(s.email)}</b></p>
-    ${s.household?.code ? `<div class="invite"><span class="label">Code d'invitation</span><span class="code" id="syncCodeShow">${esc(s.household.code)}</span><span class="note">L'autre personne se connecte avec son courriel, puis choisit « Rejoindre avec un code ».</span></div>` : ""}
+    <p class="note">Foyer <b>${esc(s.household?.name || "")}</b>${s.email ? ` · ${esc(s.email)}` : ""}</p>
+    ${s.household?.code ? `<div class="invite"><span class="label">Code du foyer</span><span class="code" id="syncCodeShow">${esc(s.household.code)}</span><span class="note">${s.household.has_password === false ? "Définissez un mot de passe ci-dessous : il faut le code et le mot de passe pour ouvrir le foyer sur un autre appareil." : "Sur un autre appareil : Réglages › Foyer partagé › Rejoindre, avec ce code et le mot de passe du foyer."}</span></div>` : ""}
+    <form class="row" id="syncSetPass"><input type="password" id="syncSetPassInput" class="grow" placeholder="${s.household?.has_password === false ? "Choisir le mot de passe du foyer" : "Nouveau mot de passe du foyer"}" autocomplete="new-password" minlength="6" required><button class="btn">${s.household?.has_password === false ? "Définir" : "Changer"}</button></form>
+    ${noteHTML}
     <p class="note" id="syncStatus">${statusHTML}</p>
-    <div class="row"><button class="btn" data-act="sync-now">Synchroniser maintenant</button><button class="btn small ghost" data-act="sync-out">Se déconnecter</button></div>`;
+    <div class="row"><button class="btn" data-act="sync-now">Synchroniser maintenant</button><button class="btn small ghost" data-act="sync-out">Déconnecter cet appareil</button></div>`;
 }
 async function syncAction(fn, busyMsg) {
   syncNote = busyMsg; renderSync();
@@ -575,11 +584,9 @@ async function syncAction(fn, busyMsg) {
 $("#syncBody").addEventListener("submit", e => {
   e.preventDefault();
   const f = e.target;
-  if (f.id === "syncLogin") {
-    const email = $("#syncEmail").value.trim();
-    syncAction(async () => { await signIn(email); throw new Error(`Lien envoyé à ${email}. Ouvrez-le sur cet appareil pour vous connecter.`); }, "Envoi du lien…");
-  } else if (f.id === "syncCreate") { const name = $("#syncName").value.trim(); syncAction(() => createHousehold(name), "Création du foyer…"); }
-  else if (f.id === "syncJoin") { const code = $("#syncCode").value.trim(); syncAction(() => joinHousehold(code), "Recherche du foyer…"); }
+  if (f.id === "syncCreate") { const name = $("#syncName").value.trim(), pass = $("#syncNewPass").value; syncAction(() => createHousehold(name, pass), "Création du foyer…"); }
+  else if (f.id === "syncJoin") { const code = $("#syncCode").value.trim(), pass = $("#syncPass").value; syncAction(() => joinHousehold(code, pass), "Ouverture du foyer…"); }
+  else if (f.id === "syncSetPass") { const pass = $("#syncSetPassInput").value; syncAction(async () => { await setHouseholdPassword(pass); throw new Error("Mot de passe du foyer enregistré."); }, "Enregistrement…"); }
 });
 onSyncChange(() => { if (tab === "reglages") renderSync(); });
 function onRemoteChange() {
@@ -603,7 +610,7 @@ document.addEventListener("click", async e => {
   else if (act === "seed-last") { setLast(state.films[id] || { id, t: $(".ticket .title")?.textContent || "" }, true); $("#lastInput").scrollIntoView({ behavior: "smooth", block: "center" }); }
   else if (act === "gotab") showTab(b.dataset.tab);
   else if (act === "sync-now") syncNow();
-  else if (act === "sync-out") syncAction(signOut, "");
+  else if (act === "sync-out") { if (b.dataset.confirm) syncAction(leaveDevice, ""); else { b.dataset.confirm = "1"; b.textContent = "Confirmer? Il faudra le code et le mot de passe"; } }
   else if (act === "more-bl") { blLimit += 60; renderBacklog(); }
   else if (act === "more-ls") { lsLimit += 60; renderLists(); }
   else if (act === "del-list") { if (b.dataset.confirm) { delete state.lists[b.dataset.id]; selRefs.delete(b.dataset.id); save(); } else { b.dataset.confirm = "1"; b.textContent = "Confirmer la suppression?"; } }
