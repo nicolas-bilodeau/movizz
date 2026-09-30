@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Movizz</title>
+<meta name="description" content="Choisir le prochain film à regarder : backlog, tirage au hasard, recommandations et disponibilité au Canada.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231b2233'/><text x='16' y='23' font-size='18' text-anchor='middle' fill='%23f2b53a' font-family='Arial Black'>M</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800;900&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header class="marquee">
+  <div class="marquee-inner">
+    <div class="brand"><h1>Movi<span>zz</span></h1><p>Qu'est-ce qu'on regarde ce soir?</p></div>
+    <nav class="tabs" role="tablist" id="tabs">
+      <button role="tab" data-tab="soir" aria-selected="true">Ce soir</button>
+      <button role="tab" data-tab="backlog" aria-selected="false">Backlog <span class="count" id="cntBacklog"></span></button>
+      <button role="tab" data-tab="listes" aria-selected="false">Listes</button>
+      <button role="tab" data-tab="vus" aria-selected="false">Vus <span class="count" id="cntVus"></span></button>
+      <button role="tab" data-tab="reglages" aria-selected="false">Réglages</button>
+    </nav>
+  </div>
+  <div class="bulbs"></div>
+</header>
+
+<main>
+  <div id="needKey" class="empty-state" hidden>
+    <h3>Il faut une clé TMDB pour commencer</h3>
+    <p class="note">Movizz tire les films, les affiches, la distribution et la disponibilité au Canada de The Movie Database (TMDB). La clé est gratuite : créez un compte sur themoviedb.org, puis demandez une clé dans <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">Paramètres › API</a>. Collez ensuite le « jeton d'accès en lecture » (ou la clé API) dans l'onglet Réglages. Elle reste dans ce navigateur.</p>
+    <div class="row"><button class="btn primary" data-act="gotab" data-tab="reglages">Ajouter ma clé</button></div>
+  </div>
+
+  <!-- CE SOIR -->
+  <section class="view" id="view-soir">
+    <div>
+      <h2>Au hasard dans le backlog</h2>
+      <p class="lede">On tire un film parmi ceux qu'il vous reste à voir, selon l'humeur du moment.</p>
+    </div>
+    <div class="panel">
+      <div class="row">
+        <span class="label">Humeur</span>
+        <div class="seg" id="moodSeg">
+          <button data-v="any" aria-pressed="true">Peu importe</button>
+          <button data-v="light" aria-pressed="false">Léger</button>
+          <button data-v="heavy" aria-pressed="false">Intense</button>
+        </div>
+        <label class="switch"><input type="checkbox" id="shortOnly"> Moins de 1 h 45</label>
+        <label class="switch"><input type="checkbox" id="availOnly"> Seulement sur mes plateformes</label>
+      </div>
+      <div class="row"><span class="label">Genres</span><div class="chips" id="genreChips"></div></div>
+      <div class="row" id="originRow" hidden><span class="label">Origine</span><div class="chips" id="originChips"></div></div>
+      <div class="row">
+        <button class="btn primary" id="drawBtn">Tirer un film</button>
+        <span class="note" id="drawPool"></span>
+      </div>
+      <div id="drawResult"></div>
+    </div>
+
+    <div>
+      <h2>Selon le dernier film vu</h2>
+      <p class="lede">Entrez le dernier film regardé. Movizz propose cinq pistes : même lignée, tout le contraire, même réalisation, l'acteur principal et l'actrice principale.</p>
+    </div>
+    <div class="panel">
+      <div class="ac" id="lastAc">
+        <label class="label" for="lastInput">Dernier film regardé</label>
+        <input type="search" id="lastInput" placeholder="N'importe quel film" autocomplete="off">
+        <div class="ac-list" hidden></div>
+      </div>
+      <div class="row">
+        <span class="label">Chercher dans</span>
+        <div class="seg" id="scopeSeg">
+          <button data-v="backlog" aria-pressed="true">Mon backlog</button>
+          <button data-v="refs" aria-pressed="false">Listes références</button>
+          <button data-v="all" aria-pressed="false">Tous les films</button>
+        </div>
+        <label class="switch"><input type="checkbox" id="availOnly2"> Seulement sur mes plateformes</label>
+      </div>
+      <div class="chips" id="refChips" hidden></div>
+      <div id="recoHead"></div>
+      <div class="sugg-grid" id="recoGrid"></div>
+    </div>
+  </section>
+
+  <!-- BACKLOG -->
+  <section class="view" id="view-backlog" hidden>
+    <div>
+      <h2>Le backlog</h2>
+      <p class="lede">Les films qu'il vous reste à voir. Cherchez n'importe quel film, ou importez une liste.</p>
+    </div>
+    <div class="panel">
+      <div class="row">
+        <div class="ac grow" id="addAc">
+          <label class="label" for="addInput">Ajouter un film</label>
+          <input type="search" id="addInput" placeholder="Titre" autocomplete="off">
+          <div class="ac-list" hidden></div>
+        </div>
+        <div class="origin-field">
+          <label class="label" for="addOrigin">Origine (optionnel)</label>
+          <input type="text" id="addOrigin" placeholder="Ex. Oscars 2025">
+        </div>
+      </div>
+      <details id="importBox">
+        <summary>Importer une liste (IMDb, Letterboxd, texte)</summary>
+        <div class="stack">
+          <p class="note">Collez un export CSV d'IMDb ou de Letterboxd, ou un titre par ligne (« Titre (année) » fonctionne aussi).</p>
+          <textarea id="impText" placeholder="Stalker (1979)&#10;Chungking Express (1994)&#10;Paddington 2"></textarea>
+          <div class="twocol">
+            <label>Nom de la liste<input type="text" id="impName" placeholder="Ex. Liste IMDb, Palmes d'or"></label>
+            <div><span class="label">Destination</span><div class="seg" id="impDest"><button data-v="backlog" aria-pressed="true">Ajouter au backlog</button><button data-v="ref" aria-pressed="false">Nouvelle liste référence</button></div></div>
+          </div>
+          <div class="row"><button class="btn primary" id="impGo">Importer</button><span class="note" id="impNote"></span></div>
+        </div>
+      </details>
+    </div>
+    <div class="row">
+      <input type="search" id="blSearch" class="grow" placeholder="Filtrer (titre, réalisation, distribution, origine)">
+      <select id="blSort" class="auto">
+        <option value="added">Ajout récent</option>
+        <option value="title">Titre</option>
+        <option value="year">Année</option>
+        <option value="runtime">Durée</option>
+      </select>
+      <label class="switch"><input type="checkbox" id="blAvail"> Sur mes plateformes</label>
+    </div>
+    <div id="blList"></div>
+  </section>
+
+  <!-- LISTES -->
+  <section class="view" id="view-listes" hidden>
+    <div>
+      <h2>Listes références</h2>
+      <p class="lede">Parcourez les listes et ajoutez ce qui vous tente. Elles servent aussi de bassin pour les recommandations.</p>
+    </div>
+    <div class="chips" id="listPick"></div>
+    <div class="row">
+      <input type="search" id="lsSearch" class="grow" placeholder="Filtrer cette liste">
+      <label class="switch"><input type="checkbox" id="lsHideSeen" checked> Masquer les vus</label>
+    </div>
+    <p class="note" id="listNote"></p>
+    <div id="lsList"></div>
+  </section>
+
+  <!-- VUS -->
+  <section class="view" id="view-vus" hidden>
+    <div>
+      <h2>Déjà vus</h2>
+      <p class="lede">Ces films ne sont plus proposés. Le plus récent sert de point de départ aux recommandations.</p>
+    </div>
+    <div id="vusList"></div>
+  </section>
+
+  <!-- REGLAGES -->
+  <section class="view" id="view-reglages" hidden>
+    <div>
+      <h2>Réglages</h2>
+    </div>
+    <div class="panel">
+      <h3>Clé TMDB</h3>
+      <p class="note">Le « jeton d'accès en lecture » (long, commence par eyJ) ou la clé API v3. Elle est gardée dans ce navigateur seulement. <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">Obtenir une clé</a></p>
+      <div class="row">
+        <input type="password" id="keyInput" class="grow" autocomplete="off" placeholder="Collez votre clé ici">
+        <button class="btn primary" id="keySave">Enregistrer</button>
+      </div>
+      <p class="note" id="keyNote"></p>
+    </div>
+    <div class="panel">
+      <h3>Mes plateformes au Canada</h3>
+      <p class="note">Cochez vos abonnements. Les films offerts sur ces plateformes (y compris les services gratuits avec pub) passent le filtre « Seulement sur mes plateformes ». Données de diffusion : JustWatch, via TMDB.</p>
+      <input type="search" id="provSearch" placeholder="Chercher une plateforme">
+      <div class="chips" id="subsChips"></div>
+      <label class="switch"><input type="checkbox" id="rentOk"> Compter aussi la location et l'achat</label>
+    </div>
+    <div class="panel">
+      <h3>Sauvegarde et partage</h3>
+      <p class="note">Tout est enregistré dans ce navigateur. Pour retrouver votre backlog sur un autre appareil, ou le partager avec l'autre cinéphile de la maison, exportez un fichier puis importez-le de l'autre côté. Les deux backlogs sont fusionnés.</p>
+      <div class="row">
+        <button class="btn" id="exportBtn">Exporter mes données</button>
+        <label class="btn" for="importFile">Importer un fichier</label>
+        <input type="file" id="importFile" accept="application/json,.json" hidden>
+        <span class="note" id="backupNote"></span>
+      </div>
+    </div>
+    <p class="note">Ce produit utilise l'API TMDB mais n'est ni approuvé ni certifié par TMDB. Disponibilités fournies par JustWatch.</p>
+  </section>
+</main>
+<div class="toast" id="toast" hidden></div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
