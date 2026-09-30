@@ -388,7 +388,16 @@ export function parseImport(text) {
   const ti = col("title", "series_title", "name");
   if (ti >= 0 && rows.length > 1) {
     const yi = col("year", "released_year"), ty = col("title type");
-    return rows.slice(1).filter(r => !(ty >= 0 && r[ty] && !/movie|film|documentary/i.test(r[ty]))).map(r => ({ t: (r[ti] || "").trim(), y: parseInt(r[yi]) || null })).filter(x => x.t);
+    // Letterboxd diary: "Watched Date"; Letterboxd watched.csv: "Date" (when it was logged).
+    const wi = col("watched date", "date");
+    const items = rows.slice(1).filter(r => !(ty >= 0 && r[ty] && !/movie|film|documentary/i.test(r[ty]))).map(r => ({ t: (r[ti] || "").trim(), y: parseInt(r[yi]) || null, w: wi >= 0 ? Date.parse(r[wi] + "T20:00:00") || null : null })).filter(x => x.t);
+    // A diary lists rewatches as separate entries: keep one per film, with the latest date.
+    const byKey = new Map();
+    for (const it of items) {
+      const k = `${norm(it.t)}:${it.y || ""}`, prev = byKey.get(k);
+      if (!prev || (it.w || 0) > (prev.w || 0)) byKey.set(k, it);
+    }
+    return [...byKey.values()];
   }
   return text.split(/\n+/).map(l => l.replace(/^\s*\d+[.)]\s*/, "").trim()).filter(Boolean).map(line => {
     const m = line.match(/^(.*?)\s*[([]?((?:18|19|20)\d{2})[)\]]?\s*$/);
@@ -396,6 +405,12 @@ export function parseImport(text) {
   });
 }
 wireSeg("impDest");
+$("#impFile").addEventListener("change", async e => {
+  const file = e.target.files[0]; if (!file) return;
+  $("#impText").value = await file.text();
+  if (!$("#impName").value) $("#impName").value = file.name.replace(/\.[^.]+$/, "");
+  e.target.value = "";
+});
 $("#impGo").addEventListener("click", async () => {
   if (!tmdb) { toast("Ajoutez d'abord votre clé TMDB."); return; }
   const items = parseImport($("#impText").value);
@@ -411,19 +426,30 @@ $("#impGo").addEventListener("click", async () => {
     $("#impText").value = "";
     return;
   }
+  const asWatched = segValue("impDest") === "watched";
   $("#impGo").disabled = true;
   let ok = 0, missing = [];
   for (const [i, it] of items.entries()) {
     note.textContent = `Import… ${i + 1}/${items.length}`;
     const hit = await resolveOne({ key: `imp:${norm(it.t)}:${it.y || ""}`, t: it.t, y: it.y }).catch(() => null);
     if (!hit) { missing.push(it.t); continue; }
-    if (!statusOf(hit.id)) {
+    const cur = state.films[hit.id];
+    if (asWatched) {
+      // Already seen on an equal or later date: nothing to change.
+      if (cur?.status === "watched" && (cur.watchedAt || 0) >= (it.w || 0)) continue;
+      try {
+        const film = cur?.cast ? cur : (await fullFilm(hit.id)).film;
+        const when = it.w || Date.now();
+        putFilm(film, { status: "watched", watchedAt: when, addedAt: cur?.addedAt || when, o: cur?.o || name });
+        ok++;
+      } catch { missing.push(it.t); }
+    } else if (!statusOf(hit.id)) {
       try { const { film } = await fullFilm(hit.id); putFilm(film, { status: "backlog", addedAt: Date.now(), o: name }); ok++; } catch { missing.push(it.t); }
     }
   }
   saveRefCache();
   $("#impGo").disabled = false;
-  note.textContent = `${ok} films ajoutés.${missing.length ? ` Introuvables : ${missing.slice(0, 8).join(", ")}${missing.length > 8 ? "…" : ""}` : ""}`;
+  note.textContent = `${ok} films ${asWatched ? "marqués comme vus" : "ajoutés"}.${missing.length ? ` Introuvables : ${missing.slice(0, 8).join(", ")}${missing.length > 8 ? "…" : ""}` : ""}`;
   $("#impText").value = "";
 });
 

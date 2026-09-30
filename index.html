@@ -9,7 +9,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%23100e0a'/><rect x='2.5' y='2.5' width='27' height='27' fill='none' stroke='%23c9a445'/><text x='16' y='23' font-size='19' text-anchor='middle' fill='%23e9cc7a' font-family='Didot,Georgia,serif'>M</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Limelight&family=Poiret+One&family=Josefin+Sans:wght@400;600;700&family=Jost:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="css/app.css?v=5">
+<link rel="stylesheet" href="css/app.css?v=6">
 </head>
 <body>
 <header class="marquee">
@@ -105,11 +105,12 @@
       <details id="importBox">
         <summary>Importer une liste (IMDb, Letterboxd, texte)</summary>
         <div class="stack">
-          <p class="note">Collez un export CSV d'IMDb ou de Letterboxd, ou un titre par ligne (« Titre (année) » fonctionne aussi).</p>
+          <p class="note">Collez un export CSV d'IMDb ou de Letterboxd, ou un titre par ligne (« Titre (année) » fonctionne aussi). Pour vos films déjà vus, le <code>diary.csv</code> de Letterboxd garde la date de chaque visionnement.</p>
+          <div class="row"><label class="btn small" for="impFile">Choisir un fichier CSV</label><input type="file" id="impFile" accept=".csv,text/csv,text/plain" hidden></div>
           <textarea id="impText" placeholder="Stalker (1979)&#10;Chungking Express (1994)&#10;Paddington 2"></textarea>
           <div class="twocol">
             <label>Nom de la liste<input type="text" id="impName" placeholder="Ex. Liste IMDb, Palmes d'or"></label>
-            <div><span class="label">Destination</span><div class="seg" id="impDest"><button data-v="backlog" aria-pressed="true">Ajouter au backlog</button><button data-v="ref" aria-pressed="false">Nouvelle liste référence</button></div></div>
+            <div><span class="label">Destination</span><div class="seg" id="impDest"><button data-v="backlog" aria-pressed="true">Ajouter au backlog</button><button data-v="watched" aria-pressed="false">Marquer comme vus</button><button data-v="ref" aria-pressed="false">Nouvelle liste référence</button></div></div>
           </div>
           <div class="row"><button class="btn primary" id="impGo">Importer</button><span class="note" id="impNote"></span></div>
         </div>
@@ -191,6 +192,6 @@
   </section>
 </main>
 <div class="toast" id="toast" hidden></div>
-<script type="module" src="js/main.js?v=5"></script>
+<script type="module" src="js/main.js?v=6"></script>
 </body>
 </html>
