@@ -303,3 +303,4 @@ input[type="email"] { background: var(--bg); border: 1px solid var(--line); bord
 .invite { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 12px 14px; border: 1px dashed var(--gold); background: var(--bg); }
 .invite .code { font-family: var(--display); font-size: 28px; letter-spacing: .28em; color: var(--accent); }
 .invite .note { flex-basis: 100%; }
+#impDest { flex-wrap: wrap; }

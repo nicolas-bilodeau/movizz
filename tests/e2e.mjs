@@ -172,6 +172,26 @@ await step("films saved with an old French title are refreshed", async () => {
     return Object.values(s.films).some(x => x.t === "Chinatown" && x.tv === 3);
   });
 });
+await step("a Letterboxd diary marks films as watched with their dates", async () => {
+  const before = +(await page.textContent("#cntVus")) || 0;
+  await page.click('#tabs [data-tab="backlog"]');
+  if (!(await page.isVisible("#impText"))) await page.click("#importBox summary");
+  await page.fill("#impText", [
+    "Date,Name,Year,Letterboxd URI,Rating,Rewatch,Tags,Watched Date",
+    "2024-01-05,Apocalypse Now,1979,https://boxd.it/a,4,,,2024-01-04",
+    "2024-03-02,Apocalypse Now,1979,https://boxd.it/b,5,Yes,,2024-03-01",
+    '2024-02-10,"The Conversation",1974,https://boxd.it/c,4,,,2024-02-09',
+  ].join("\n"));
+  await page.click('#impDest [data-v="watched"]');
+  await page.click("#impGo");
+  await page.waitForFunction(() => document.querySelector("#impNote").textContent.includes("marqués comme vus"));
+  assert.match(await page.textContent("#impNote"), /^2 films marqués comme vus/);
+  assert.equal(+(await page.textContent("#cntVus")), before + 2);
+  const films = await page.evaluate(() => JSON.parse(localStorage.getItem("movizz.v2")).films);
+  assert.equal(new Date(films[6].watchedAt).toISOString().slice(0, 10), "2024-03-01");
+  assert.equal(films[7].status, "watched");
+  await page.click('#impDest [data-v="backlog"]');
+});
 await step("phone width has no horizontal scroll", async () => {
   await page.setViewportSize({ width: 390, height: 900 });
   await page.click('#tabs [data-tab="soir"]');
